@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Sparkles, 
-  User, 
   Calendar, 
   Droplets, 
   Camera, 
@@ -17,7 +16,17 @@ import {
   LogOut,
   CheckCircle2
 } from 'lucide-react';
-import SkinIDCard from '@/components/custom/skin-id-card';
+import dynamic from 'next/dynamic';
+
+// Importação dinâmica do SkinIDCard para evitar erros de SSR
+const SkinIDCard = dynamic(() => import('@/components/custom/skin-id-card'), {
+  ssr: false,
+  loading: () => (
+    <div className="bg-white rounded-2xl p-6 border border-rose-100 animate-pulse">
+      <div className="h-24 bg-gray-200 rounded"></div>
+    </div>
+  )
+});
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -25,36 +34,52 @@ export default function DashboardPage() {
   const [greeting, setGreeting] = useState('');
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [routineCompleted, setRoutineCompleted] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Verificar se tem perfil
-    const savedProfile = localStorage.getItem('dermaflow_profile');
-    if (!savedProfile) {
-      router.push('/onboarding');
-      return;
-    }
-    
-    setProfile(JSON.parse(savedProfile));
-    
-    // Definir saudação baseada na hora
-    const hour = new Date().getHours();
-    if (hour < 12) setGreeting('Bom dia');
-    else if (hour < 18) setGreeting('Boa tarde');
-    else setGreeting('Boa noite');
+    setMounted(true);
+  }, []);
 
-    // Carregar progresso da rotina
-    const savedProgress = localStorage.getItem('dermaflow_routine_progress');
-    if (savedProgress) {
-      const progress = JSON.parse(savedProgress);
-      setCompletedSteps(progress.completedSteps || []);
-      setRoutineCompleted(progress.routineCompleted || false);
+  useEffect(() => {
+    if (!mounted) return;
+
+    // Verificar se tem perfil
+    try {
+      const savedProfile = localStorage.getItem('dermaflow_profile');
+      if (!savedProfile) {
+        router.push('/onboarding');
+        return;
+      }
+      
+      setProfile(JSON.parse(savedProfile));
+      
+      // Definir saudação baseada na hora
+      const hour = new Date().getHours();
+      if (hour < 12) setGreeting('Bom dia');
+      else if (hour < 18) setGreeting('Boa tarde');
+      else setGreeting('Boa noite');
+
+      // Carregar progresso da rotina
+      const savedProgress = localStorage.getItem('dermaflow_routine_progress');
+      if (savedProgress) {
+        const progress = JSON.parse(savedProgress);
+        setCompletedSteps(progress.completedSteps || []);
+        setRoutineCompleted(progress.routineCompleted || false);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar perfil:', error);
+      router.push('/onboarding');
     }
-  }, [router]);
+  }, [router, mounted]);
 
   const handleLogout = () => {
-    localStorage.removeItem('dermaflow_profile');
-    localStorage.removeItem('dermaflow_routine_progress');
-    router.push('/auth/login');
+    try {
+      localStorage.removeItem('dermaflow_profile');
+      localStorage.removeItem('dermaflow_routine_progress');
+      router.push('/auth/login');
+    } catch (error) {
+      console.error('Erro ao fazer logout:', error);
+    }
   };
 
   const toggleStep = (stepNumber: number) => {
@@ -64,10 +89,14 @@ export default function DashboardPage() {
         : [...prev, stepNumber];
       
       // Salvar progresso
-      localStorage.setItem('dermaflow_routine_progress', JSON.stringify({
-        completedSteps: newSteps,
-        routineCompleted: false
-      }));
+      try {
+        localStorage.setItem('dermaflow_routine_progress', JSON.stringify({
+          completedSteps: newSteps,
+          routineCompleted: false
+        }));
+      } catch (error) {
+        console.error('Erro ao salvar progresso:', error);
+      }
       
       return newSteps;
     });
@@ -76,17 +105,21 @@ export default function DashboardPage() {
   const completeRoutine = () => {
     setRoutineCompleted(true);
     setCompletedSteps([1, 2, 3, 4, 5]);
-    localStorage.setItem('dermaflow_routine_progress', JSON.stringify({
-      completedSteps: [1, 2, 3, 4, 5],
-      routineCompleted: true
-    }));
+    try {
+      localStorage.setItem('dermaflow_routine_progress', JSON.stringify({
+        completedSteps: [1, 2, 3, 4, 5],
+        routineCompleted: true
+      }));
+    } catch (error) {
+      console.error('Erro ao salvar rotina completa:', error);
+    }
   };
 
   const showComingSoon = (feature: string) => {
     alert(`${feature} em breve! 🚀\n\nEstamos trabalhando nesta funcionalidade incrível para você.`);
   };
 
-  if (!profile) {
+  if (!mounted || !profile) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-pink-50 flex items-center justify-center">
         <div className="animate-pulse">
@@ -115,12 +148,14 @@ export default function DashboardPage() {
               <button 
                 onClick={() => showComingSoon('Chat com Assistente')}
                 className="p-2 hover:bg-rose-50 rounded-lg transition-colors"
+                aria-label="Chat"
               >
                 <MessageCircle className="w-5 h-5 text-gray-600" />
               </button>
               <button 
                 onClick={() => showComingSoon('Configurações')}
                 className="p-2 hover:bg-rose-50 rounded-lg transition-colors"
+                aria-label="Configurações"
               >
                 <Settings className="w-5 h-5 text-gray-600" />
               </button>
@@ -128,6 +163,7 @@ export default function DashboardPage() {
                 onClick={handleLogout}
                 className="p-2 hover:bg-rose-50 rounded-lg transition-colors"
                 title="Sair"
+                aria-label="Sair"
               >
                 <LogOut className="w-5 h-5 text-gray-600" />
               </button>
