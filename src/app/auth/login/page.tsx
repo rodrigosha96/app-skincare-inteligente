@@ -14,20 +14,32 @@ export default function LoginPage() {
 
   useEffect(() => {
     // Verificar se já está autenticado
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        router.push('/dashboard');
-      } else {
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          // Usar replace em vez de push para evitar problemas de navegação
+          router.replace('/dashboard');
+        } else {
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Erro ao verificar autenticação:', error);
         setLoading(false);
       }
-    });
+    };
+
+    checkAuth();
 
     // Escutar mudanças de autenticação
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        router.push('/dashboard');
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        // Pequeno delay para garantir que a sessão está pronta
+        setTimeout(() => {
+          router.replace('/dashboard');
+        }, 100);
       }
     });
 
@@ -168,8 +180,10 @@ export default function LoginPage() {
                 },
               },
             }}
-            providers={[]}
-            redirectTo={`${window.location.origin}/dashboard`}
+            providers={['google', 'apple']}
+            redirectTo={typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined}
+            onlyThirdPartyProviders={false}
+            showLinks={true}
           />
         </div>
 

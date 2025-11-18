@@ -18,40 +18,59 @@ export default function DashboardPage() {
 
   async function checkUser() {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
+      if (sessionError) {
+        console.error('Erro ao obter sessão:', sessionError);
+        router.replace('/auth/login');
+        return;
+      }
+
       if (!session) {
-        router.push('/auth/login');
+        router.replace('/auth/login');
         return;
       }
 
       setUser(session.user);
 
       // Buscar perfil do usuário
-      const { data: profileData } = await supabase
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', session.user.id)
         .single();
 
+      if (profileError) {
+        // Se erro é "não encontrado", redirecionar para onboarding
+        if (profileError.code === 'PGRST116') {
+          router.replace('/onboarding');
+          return;
+        }
+        console.error('Erro ao buscar perfil:', profileError);
+      }
+
       if (profileData) {
         setProfile(profileData);
       } else {
         // Se não tem perfil, redirecionar para onboarding
-        router.push('/onboarding');
+        router.replace('/onboarding');
         return;
       }
 
       setLoading(false);
     } catch (error) {
       console.error('Erro ao carregar usuário:', error);
-      setLoading(false);
+      router.replace('/auth/login');
     }
   }
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
-    router.push('/');
+    try {
+      await supabase.auth.signOut();
+      router.replace('/');
+    } catch (error) {
+      console.error('Erro ao fazer logout:', error);
+    }
   }
 
   if (loading) {
