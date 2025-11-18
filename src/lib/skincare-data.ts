@@ -242,9 +242,9 @@ export const ONBOARDING_QUESTIONS: QuestionStep[] = [
 
 export const generateSkinID = (profile: any): string => {
   // Gera código único baseado nas características
-  const typeCode = profile.skinType?.charAt(0).toUpperCase() || 'X';
+  const typeCode = profile['skin-type']?.charAt(0).toUpperCase() || 'X';
   const sensitivityCode = profile.sensitivity === 'alta' ? '3' : profile.sensitivity === 'moderada' ? '2' : '1';
-  const fitzCode = profile.fitzpatrickType || 'X';
+  const fitzCode = profile.fitzpatrick || 'X';
   
   return `${fitzCode}.${sensitivityCode}-${typeCode}`;
 };
@@ -259,7 +259,7 @@ export const generateSkinDescription = (profile: any): string => {
     'mista': 'Mista',
     'oleosa': 'Oleosa'
   };
-  parts.push(skinTypeMap[profile.skinType] || 'Indefinida');
+  parts.push(skinTypeMap[profile['skin-type']] || 'Indefinida');
   
   // Sensibilidade
   const sensitivityMap: Record<string, string> = {
@@ -283,19 +283,15 @@ export const generateSkinDescription = (profile: any): string => {
 export const generateInfluencingFactors = (profile: any): string[] => {
   const factors: string[] = [];
   
-  if (profile.lifestyle?.stressLevel >= 4) {
+  if (profile['lifestyle-stress'] && parseInt(profile['lifestyle-stress']) >= 4) {
     factors.push('Influenciada por estresse');
   }
   
-  if (profile.menstrualCycle === 'sim') {
+  if (profile['menstrual-cycle'] === 'sim') {
     factors.push('Varia com ciclo menstrual');
   }
   
-  if (profile.lifestyle?.sleepQuality <= 2) {
-    factors.push('Afetada por sono irregular');
-  }
-  
-  if (profile.sunExposure === 'alta') {
+  if (profile['sun-exposure'] === 'alta') {
     factors.push('Alta exposição solar');
   }
   

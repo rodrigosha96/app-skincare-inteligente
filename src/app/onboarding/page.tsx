@@ -1,206 +1,157 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, ArrowLeft, ArrowRight, Check } from 'lucide-react';
-import { ONBOARDING_QUESTIONS, FITZPATRICK_TYPES, generateSkinID, generateSkinDescription, generateInfluencingFactors } from '@/lib/skincare-data';
+import { supabase } from '@/lib/supabase';
+import { ONBOARDING_QUESTIONS, generateSkinID, generateSkinDescription, generateInfluencingFactors } from '@/lib/skincare-data';
+import { Sparkles, ArrowRight, ArrowLeft, Check } from 'lucide-react';
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [showResults, setShowResults] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
-  const currentQuestion = ONBOARDING_QUESTIONS[currentStep];
-  const progress = ((currentStep + 1) / ONBOARDING_QUESTIONS.length) * 100;
+  useEffect(() => {
+    checkUser();
+  }, []);
 
-  const handleAnswer = (value: any) => {
-    setAnswers({ ...answers, [currentQuestion.id]: value });
-  };
-
-  const handleNext = () => {
-    if (currentStep < ONBOARDING_QUESTIONS.length - 1) {
-      setCurrentStep(currentStep + 1);
-    } else {
-      generateProfile();
+  async function checkUser() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      router.push('/auth/login');
+      return;
     }
-  };
-
-  const handleBack = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-    }
-  };
-
-  const generateProfile = () => {
-    setIsGenerating(true);
-    
-    // Gerar Skin ID
-    const skinID = generateSkinID(answers);
-    const description = generateSkinDescription(answers);
-    const factors = generateInfluencingFactors(answers);
-    
-    const profile = {
-      ...answers,
-      skinID: {
-        code: skinID,
-        description,
-        influencingFactors: factors,
-        createdAt: new Date().toISOString()
-      }
-    };
-    
-    // Salvar no localStorage (em produção, salvar no backend/Supabase)
-    localStorage.setItem('dermaflow_profile', JSON.stringify(profile));
-    
-    setTimeout(() => {
-      setIsGenerating(false);
-      setShowResults(true);
-    }, 2000);
-  };
-
-  const handleContinueToPlans = () => {
-    router.push('/plans');
-  };
-
-  const canProceed = () => {
-    if (currentQuestion.id === 'welcome') return true;
-    const answer = answers[currentQuestion.id];
-    
-    // Para respostas múltiplas, verificar se array tem pelo menos 1 item
-    if (Array.isArray(answer)) {
-      return answer.length > 0;
-    }
-    
-    // Para outras respostas, verificar se não é undefined/null
-    return answer !== undefined && answer !== null && answer !== '';
-  };
-
-  // Tela de resultados
-  if (showResults) {
-    const profile = JSON.parse(localStorage.getItem('dermaflow_profile') || '{}');
-    
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-pink-50 flex items-center justify-center p-4">
-        <div className="max-w-2xl w-full">
-          <div className="bg-white rounded-3xl shadow-xl border border-rose-100 p-8 sm:p-12 text-center">
-            <div className="w-20 h-20 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Check className="w-10 h-10 text-white" />
-            </div>
-            
-            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
-              Sua rotina de skincare completa para evolução está pronta!
-            </h1>
-            
-            <p className="text-lg text-gray-600 mb-8">
-              Analisamos sua pele e criamos um plano personalizado com base científica. 
-              Agora vamos desbloquear todo o potencial do DermaFlow para você.
-            </p>
-            
-            <div className="bg-gradient-to-br from-rose-50 to-pink-50 rounded-2xl p-6 mb-8">
-              <div className="text-sm font-semibold text-rose-600 mb-2">SEU SKIN ID</div>
-              <div className="text-2xl font-bold text-gray-900 mb-2">
-                {profile.skinID?.code}
-              </div>
-              <div className="text-sm text-gray-600">
-                {profile.skinID?.description}
-              </div>
-            </div>
-            
-            <button
-              onClick={handleContinueToPlans}
-              className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-xl font-semibold text-lg hover:shadow-lg hover:scale-105 transition-all duration-300 flex items-center justify-center gap-2 mx-auto"
-            >
-              Ver planos de assinatura
-              <ArrowRight className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    setUser(session.user);
   }
 
-  if (isGenerating) {
+  const currentQuestion = ONBOARDING_QUESTIONS[currentStep];
+  const isLastStep = currentStep === ONBOARDING_QUESTIONS.length - 1;
+  const canProceed = !currentQuestion.required || answers[currentQuestion.id];
+
+  function handleAnswer(value: any) {
+    setAnswers(prev => ({
+      ...prev,
+      [currentQuestion.id]: value
+    }));
+  }
+
+  function handleMultipleAnswer(value: string) {
+    const current = answers[currentQuestion.id] || [];
+    const newValue = current.includes(value)
+      ? current.filter((v: string) => v !== value)
+      : [...current, value];
+    
+    setAnswers(prev => ({
+      ...prev,
+      [currentQuestion.id]: newValue
+    }));
+  }
+
+  function handleNext() {
+    if (currentStep < ONBOARDING_QUESTIONS.length - 1) {
+      setCurrentStep(prev => prev + 1);
+    } else {
+      handleSubmit();
+    }
+  }
+
+  function handleBack() {
+    if (currentStep > 0) {
+      setCurrentStep(prev => prev - 1);
+    }
+  }
+
+  async function handleSubmit() {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      const skinId = generateSkinID(answers);
+      const skinDescription = generateSkinDescription(answers);
+      const influencingFactors = generateInfluencingFactors(answers);
+
+      const profileData = {
+        user_id: user.id,
+        skin_id: skinId,
+        skin_description: skinDescription,
+        skin_type: answers['skin-type'] || '',
+        fitzpatrick: answers.fitzpatrick || '',
+        sensitivity: answers.sensitivity || '',
+        concerns: answers.concerns || [],
+        acne_level: answers['acne-level'] || '',
+        lifestyle_stress: answers['lifestyle-stress'] || '',
+        menstrual_cycle: answers['menstrual-cycle'] || '',
+        sun_exposure: answers['sun-exposure'] || '',
+        goals: answers.goals || [],
+        budget: answers.budget || '',
+        influencing_factors: influencingFactors,
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .upsert(profileData, { onConflict: 'user_id' });
+
+      if (error) throw error;
+
+      router.push('/dashboard');
+    } catch (error) {
+      console.error('Erro ao salvar perfil:', error);
+      alert('Erro ao salvar perfil. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-pink-50 flex items-center justify-center p-4">
-        <div className="text-center space-y-6">
-          <div className="w-20 h-20 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center mx-auto animate-pulse">
-            <Sparkles className="w-10 h-10 text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Analisando sua pele...
-            </h2>
-            <p className="text-gray-600">
-              Estamos criando seu Skin ID único com base científica
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-2">
-            <div className="w-2 h-2 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-            <div className="w-2 h-2 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-            <div className="w-2 h-2 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-          </div>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-pink-50 flex items-center justify-center">
+        <Sparkles className="w-12 h-12 text-rose-500 animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-pink-50">
-      {/* Header */}
-      <header className="border-b border-rose-100 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-gradient-to-br from-rose-400 to-pink-500 rounded-xl flex items-center justify-center">
-                <Sparkles className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
-                DermaFlow
-              </span>
-            </div>
-            <div className="text-sm text-gray-600 font-medium">
-              {currentStep + 1} de {ONBOARDING_QUESTIONS.length}
-            </div>
+    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-pink-50 py-8 px-4">
+      <div className="max-w-3xl mx-auto">
+        {/* Progress Bar */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-600">
+              Passo {currentStep + 1} de {ONBOARDING_QUESTIONS.length}
+            </span>
+            <span className="text-sm font-medium text-rose-600">
+              {Math.round(((currentStep + 1) / ONBOARDING_QUESTIONS.length) * 100)}%
+            </span>
           </div>
-          {/* Progress Bar */}
-          <div className="mt-4 h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-rose-500 to-pink-500 transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
+          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-rose-500 to-pink-500 transition-all duration-500"
+              style={{ width: `${((currentStep + 1) / ONBOARDING_QUESTIONS.length) * 100}%` }}
             />
           </div>
         </div>
-      </header>
 
-      {/* Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        <div className="bg-white rounded-3xl shadow-xl border border-rose-100 p-6 sm:p-10">
-          {/* Question */}
+        {/* Question Card */}
+        <div className="bg-white rounded-2xl shadow-xl p-8 border border-rose-100">
           <div className="mb-8">
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3">
               {currentQuestion.title}
             </h2>
-            <p className="text-lg text-gray-600">
-              {currentQuestion.subtitle}
-            </p>
+            {currentQuestion.subtitle && (
+              <p className="text-gray-600 text-lg">
+                {currentQuestion.subtitle}
+              </p>
+            )}
           </div>
 
-          {/* Educational Note */}
-          {currentQuestion.educationalNote && (
-            <div className="mb-8 p-4 bg-rose-50 border border-rose-200 rounded-xl">
-              <p className="text-sm text-rose-800 leading-relaxed">
-                💡 <strong>Dica:</strong> {currentQuestion.educationalNote}
-              </p>
-            </div>
-          )}
-
-          {/* Answer Options */}
+          {/* Question Content */}
           <div className="space-y-4 mb-8">
             {currentQuestion.type === 'text' && (
-              <div className="text-center py-12">
-                <p className="text-gray-600 mb-6">
+              <div className="text-center py-8">
+                <Sparkles className="w-16 h-16 text-rose-500 mx-auto mb-4" />
+                <p className="text-gray-600">
                   Clique em "Continuar" para começar
                 </p>
               </div>
@@ -209,15 +160,23 @@ export default function OnboardingPage() {
             {currentQuestion.type === 'single' && currentQuestion.options?.map((option) => (
               <button
                 key={option.value}
-                type="button"
                 onClick={() => handleAnswer(option.value)}
-                className={`w-full text-left p-5 rounded-xl border-2 transition-all duration-300 ${
+                className={`w-full p-4 rounded-xl border-2 text-left transition-all duration-300 ${
                   answers[currentQuestion.id] === option.value
-                    ? 'border-rose-500 bg-rose-50 shadow-md'
-                    : 'border-gray-200 hover:border-rose-300 hover:shadow-sm'
+                    ? 'border-rose-500 bg-rose-50'
+                    : 'border-gray-200 hover:border-rose-300'
                 }`}
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                    answers[currentQuestion.id] === option.value
+                      ? 'border-rose-500 bg-rose-500'
+                      : 'border-gray-300'
+                  }`}>
+                    {answers[currentQuestion.id] === option.value && (
+                      <Check className="w-4 h-4 text-white" />
+                    )}
+                  </div>
                   <div className="flex-1">
                     <div className="font-semibold text-gray-900 mb-1">
                       {option.label}
@@ -228,133 +187,88 @@ export default function OnboardingPage() {
                       </div>
                     )}
                   </div>
-                  {answers[currentQuestion.id] === option.value && (
-                    <Check className="w-6 h-6 text-rose-500 flex-shrink-0" />
-                  )}
                 </div>
               </button>
             ))}
 
-            {currentQuestion.type === 'visual' && currentQuestion.id === 'fitzpatrick' && (
-              <div className="grid sm:grid-cols-2 gap-4">
-                {FITZPATRICK_TYPES.map((ft) => (
-                  <button
-                    key={ft.type}
-                    type="button"
-                    onClick={() => handleAnswer(ft.type)}
-                    className={`text-left p-4 rounded-xl border-2 transition-all duration-300 ${
-                      answers[currentQuestion.id] === ft.type
-                        ? 'border-rose-500 bg-rose-50 shadow-md'
-                        : 'border-gray-200 hover:border-rose-300 hover:shadow-sm'
-                    }`}
-                  >
-                    <div className="flex items-start gap-4">
-                      <img 
-                        src={ft.image} 
-                        alt={ft.name}
-                        className="w-16 h-16 rounded-lg object-cover"
-                      />
-                      <div className="flex-1">
-                        <div className="font-semibold text-gray-900 mb-1">
-                          {ft.name}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          {ft.description}
-                        </div>
-                      </div>
-                      {answers[currentQuestion.id] === ft.type && (
-                        <Check className="w-5 h-5 text-rose-500 flex-shrink-0" />
+            {currentQuestion.type === 'multiple' && currentQuestion.options?.map((option) => {
+              const isSelected = (answers[currentQuestion.id] || []).includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => handleMultipleAnswer(option.value)}
+                  className={`w-full p-4 rounded-xl border-2 text-left transition-all duration-300 ${
+                    isSelected
+                      ? 'border-rose-500 bg-rose-50'
+                      : 'border-gray-200 hover:border-rose-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${
+                      isSelected
+                        ? 'border-rose-500 bg-rose-500'
+                        : 'border-gray-300'
+                    }`}>
+                      {isSelected && (
+                        <Check className="w-4 h-4 text-white" />
                       )}
                     </div>
-                  </button>
-                ))}
-              </div>
-            )}
+                    <div className="font-medium text-gray-900">
+                      {option.label}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
 
-            {currentQuestion.type === 'visual' && currentQuestion.id === 'skin-type' && (
-              <div className="grid sm:grid-cols-2 gap-4">
+            {currentQuestion.type === 'visual' && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {currentQuestion.options?.map((option) => (
                   <button
                     key={option.value}
-                    type="button"
                     onClick={() => handleAnswer(option.value)}
-                    className={`text-left p-5 rounded-xl border-2 transition-all duration-300 ${
+                    className={`p-4 rounded-xl border-2 text-center transition-all duration-300 ${
                       answers[currentQuestion.id] === option.value
-                        ? 'border-rose-500 bg-rose-50 shadow-md'
-                        : 'border-gray-200 hover:border-rose-300 hover:shadow-sm'
+                        ? 'border-rose-500 bg-rose-50'
+                        : 'border-gray-200 hover:border-rose-300'
                     }`}
                   >
-                    <div className="text-4xl mb-3">{option.image}</div>
-                    <div className="font-semibold text-gray-900 mb-1">
+                    {typeof option.image === 'string' && option.image.startsWith('http') ? (
+                      <img
+                        src={option.image}
+                        alt={option.label}
+                        className="w-full h-24 object-cover rounded-lg mb-3"
+                      />
+                    ) : (
+                      <div className="text-4xl mb-3">{option.image}</div>
+                    )}
+                    <div className="font-semibold text-gray-900 text-sm mb-1">
                       {option.label}
                     </div>
-                    <div className="text-sm text-gray-600">
-                      {option.description}
-                    </div>
-                    {answers[currentQuestion.id] === option.value && (
-                      <Check className="w-5 h-5 text-rose-500 mt-2" />
+                    {option.description && (
+                      <div className="text-xs text-gray-600">
+                        {option.description}
+                      </div>
                     )}
                   </button>
                 ))}
               </div>
             )}
 
-            {currentQuestion.type === 'multiple' && (
-              <div className="grid sm:grid-cols-2 gap-3">
-                {currentQuestion.options?.map((option) => {
-                  const selected = answers[currentQuestion.id] || [];
-                  const isSelected = selected.includes(option.value);
-                  
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => {
-                        const newSelected = isSelected
-                          ? selected.filter((v: string) => v !== option.value)
-                          : [...selected, option.value];
-                        handleAnswer(newSelected);
-                      }}
-                      className={`text-left p-4 rounded-xl border-2 transition-all duration-300 ${
-                        isSelected
-                          ? 'border-rose-500 bg-rose-50 shadow-md'
-                          : 'border-gray-200 hover:border-rose-300 hover:shadow-sm'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-medium text-gray-900">
-                          {option.label}
-                        </span>
-                        {isSelected && (
-                          <Check className="w-5 h-5 text-rose-500 flex-shrink-0" />
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
             {currentQuestion.type === 'scale' && (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {currentQuestion.options?.map((option) => (
                   <button
                     key={option.value}
-                    type="button"
                     onClick={() => handleAnswer(option.value)}
-                    className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-300 ${
+                    className={`w-full p-4 rounded-xl border-2 text-center transition-all duration-300 ${
                       answers[currentQuestion.id] === option.value
-                        ? 'border-rose-500 bg-rose-50 shadow-md'
-                        : 'border-gray-200 hover:border-rose-300 hover:shadow-sm'
+                        ? 'border-rose-500 bg-rose-50'
+                        : 'border-gray-200 hover:border-rose-300'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-gray-900">
-                        {option.label}
-                      </span>
-                      {answers[currentQuestion.id] === option.value && (
-                        <Check className="w-5 h-5 text-rose-500" />
-                      )}
+                    <div className="font-medium text-gray-900">
+                      {option.label}
                     </div>
                   </button>
                 ))}
@@ -362,30 +276,51 @@ export default function OnboardingPage() {
             )}
           </div>
 
-          {/* Navigation */}
-          <div className="flex items-center justify-between gap-4 pt-6 border-t border-gray-100">
+          {/* Educational Note */}
+          {currentQuestion.educationalNote && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-8">
+              <p className="text-sm text-blue-900">
+                💡 <strong>Dica:</strong> {currentQuestion.educationalNote}
+              </p>
+            </div>
+          )}
+
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between gap-4">
             <button
-              type="button"
               onClick={handleBack}
               disabled={currentStep === 0}
-              className="flex items-center gap-2 px-6 py-3 text-gray-600 font-medium rounded-xl hover:bg-gray-100 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-6 py-3 text-gray-700 hover:text-rose-600 transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ArrowLeft className="w-5 h-5" />
               Voltar
             </button>
-            
+
             <button
-              type="button"
               onClick={handleNext}
-              disabled={!canProceed()}
-              className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              disabled={!canProceed || loading}
+              className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full font-semibold hover:shadow-lg hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              {currentStep === ONBOARDING_QUESTIONS.length - 1 ? 'Finalizar' : 'Continuar'}
-              <ArrowRight className="w-5 h-5" />
+              {loading ? (
+                <>
+                  <Sparkles className="w-5 h-5 animate-spin" />
+                  Salvando...
+                </>
+              ) : isLastStep ? (
+                <>
+                  Finalizar
+                  <Check className="w-5 h-5" />
+                </>
+              ) : (
+                <>
+                  Continuar
+                  <ArrowRight className="w-5 h-5" />
+                </>
+              )}
             </button>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
